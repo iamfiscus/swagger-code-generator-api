@@ -1,0 +1,31 @@
+{
+  "name": "swagger-code-generator-api",
+  "version": "0.0.0",
+  "description": "Generate SDK's or Server based on the Swagger.io Generator API.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Jd Fiscus <me@iamfiscus.com> (http://iamfiscus.com)",
+  "keywords": [
+    "swagger",
+    "codegen",
+    "generator",
+    "cli",
+    "sdk",
+    "mock server"
+  ],
+  "bugs": {
+    "url": ""
+  },
+  "homepage": "",
+  "license": "MIT",
+  "dependencies": {
+    "camelcase": "^4.0.0",
+    "js-yaml": "^3.7.0",
+    "mkdirp": "^0.5.1",
+    "request": "^2.79.0",
+    "ssl-root-cas": "^1.2.3",
+    "unzip": "^0.1.11"
+  }
+}
