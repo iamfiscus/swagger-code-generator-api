@@ -1,4 +1,5 @@
 'use strict';
+
 require('ssl-root-cas').inject();
 
 const yaml = require('js-yaml');
@@ -9,18 +10,7 @@ const unzip = require('unzip');
 const camelCase = require('camelcase');
 const mkdirp = require('mkdirp');
 
-let error = null;
-let config;
-let serverTypeList;
-let defaultOptions = [{
-        path: null,
-        validate: function(path) {
-            return true
-        },
-        message: 'Must have a valid JSON or path'
-    },
-
-];
+let swagger;
 
 // @TODO print to console using chalk
 // @TODO allow for url request
@@ -28,217 +18,220 @@ let defaultOptions = [{
 // @TODO error handling
 
 function validateOptions(options) {
-    // @TODO Validate and define default options
+  // @TODO Validate and define default options
 
-    // Swagger
-    if (!options.swagger) {
-      throw new Error(`The swagger file path is required.`);
+  // Swagger
+  if (!options.swagger) {
+    throw new Error('The swagger file path is required.');
+  }
+
+  if (path.extname(options.swagger) !== '.yaml' && path.extname(options.swagger) !== '.json') {
+    throw new Error('The swagger file must be a YAML or JSON file.');
+  }
+
+  // Types
+  if (!options.types) {
+    throw new Error('The language \'types\' are required.');
+  }
+
+  const defaults = {
+    endpoint: `http://generator.swagger.io/api/gen/${options.action}s/`,
+    path: {
+      archive: './generated/archive/',
+      output: `./generated/${options.action}/`,
+    },
+  };
+
+  const config = Object.assign({}, defaults, options);
+
+  Object.keys(options.path).forEach((k) => {
+    if (!options.path[k]) {
+      throw new Error(`Path ${k} is required.`);
     }
 
-    if (path.extname(options.swagger) !== '.yaml' && path.extname(options.swagger) !== '.json') {
-      throw new Error(`The swagger file must be a YAML or JSON file.`);
-    }
+    mkdirp(options.path[k], (err) => {
+      if (err) {
+        throw new Error(`The path '${path}' does not exist and could not be created.`);
+      }
+    });
+  });
 
-    // Types
-    if (!options.types) {
-      throw new Error(`The language 'types' are required.`);
-    }
+  return config;
+}
 
-    // Endpoints
-    options.endpoint = options.endpoint || `http://generator.swagger.io/api/gen/${options.action}s/`
+const buildTypeList = function buildTypeList(types) {
+  const result = {};
+  types.forEach((type) => {
+    result[camelCase(type)] = type;
+  });
 
-    // Folder paths
-    options.path = options.path || {}
-    options.path.archive = options.path.archive || `./generated/archive/`
-    options.path.output = options.path.output || `./generated/${options.action}/`
-    Object.keys(options.path).forEach(function(k){
-      let path = options.path[k];
+  return result;
+};
 
-      if(!path) {
-        throw new Error(`Path ${k} is required.`);
+const getTypeList = function getTypeList(options) {
+  return new Promise((resolve, reject) => {
+    request.get({
+      url: options.endpoint,
+      json: true,
+    }, (err, req, body) => {
+      if (err) {
+        // @TODO throw better error
+        console.log(err);
+        reject(err);
+        return;
+      }
+      if (body.code) {
+        console.error(`The endpoint '${options.endpoint}' does not exist or is returning an error.`, body);
+        reject(body);
+        return;
       }
 
-      mkdirp(path, function (err) {
-        if (err) {
-          throw new Error(`The path '${path}' does not exist and could not be created.`);
-        }
+      resolve(buildTypeList(body));
+    });
+  });
+};
+
+const init = function init(options) {
+  return new Promise((resolve) => {
+    const config = validateOptions(options);
+
+    swagger = fs.readFileSync(config.swagger, 'utf8');
+
+    if (path.extname(config.swagger) === '.yaml') {
+      swagger = JSON.stringify(yaml.safeLoad(swagger));
+    }
+
+    getTypeList(config).then((data) => {
+      resolve({
+        clientTypeList: data,
+        api: swagger,
       });
-    })
-    return options
+    }).catch((err) => {
+      throw new Error(`The endpoint '${options.endpoint}' does not exist or is returning an error.`, err);
+    });
+  });
+};
 
-}
+const download = function download(downloadPath, downloadResponse) {
+  return new Promise((resolve, reject) => {
+    request(downloadResponse.link).pipe(fs.createWriteStream(downloadPath)).on('finish', resolve).on('error', reject);
+  });
+};
 
-let init = function(options) {
-    return new Promise((resolve, reject) => {
-        options = validateOptions(options);
+const unzipDownload = function unzipDownload(zipPath, toPath) {
+  if (zipPath.indexOf('.zip') === -1) throw new Error(`To unzip file must be a .zip file not ${zipPath}`);
+  return new Promise((resolve, reject) => {
+    fs.createReadStream(zipPath).pipe(unzip.Extract({
+      path: toPath,
+    })).on('error', reject).on('close', resolve);
+  });
+};
 
-        config = fs.readFileSync(options.swagger, 'utf8')
+const create = function create(options, swaggerSpec) {
+  return new Promise((resolve, reject) => {
+    const postUrl = `${options.endpoint}${options.language}`;
 
-        if (path.extname(options.swagger) === '.yaml') {
-            config = JSON.stringify(yaml.safeLoad(config))
-        }
+    request.post({
+      url: postUrl,
+      json: true,
+      body: swaggerSpec,
+    }, (err, req, body) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      if (!isNaN(body.code)) {
+        reject(body);
+        return;
+      }
+      resolve(body);
+    });
+  });
+};
 
-        getTypeList(options).then(function(data){
-          resolve({
-            clientTypeList: data,
-            api: config
-          })
-        }).catch(function(err){
-          throw new Error(`The endpoint '${options.endpoint}' does not exist or is returning an error.`);
-        })
+const generate = function generate(options) {
+  // @TODO clean up async data
+  init(options)
+    .then((initData) => {
+      options.types.forEach((type) => {
+        const defaults = {
+          filename: `${type}-${options.action}`,
+          language: type,
+        };
+        const config = Object.assign({}, defaults, options);
 
-    })
+        if (initData.clientTypeList[camelCase(type)]) {
+          return create(config, { spec: JSON.parse(initData.api) })
+            .then((response) => {
+              console.log(`${type.charAt(0).toUpperCase() + type.slice(1)} ${config.action} has been created. Downloading from ${response.link}`);
 
-}
+              // Similar to wget --no-check-certificate
+              process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 
-let buildTypeList = function(types) {
-    let result = {};
-    types.forEach(function(type, i) {
-        result[camelCase(type)] = type;
-    })
+              // Download
+              download(`${config.path.archive}${config.filename}.zip`, response)
+              .then(() => {
+                console.log(`Download of ${config.path.archive}${config.filename}.zip complete.`);
+                console.log(`Unzipping to ${config.path.output}`);
 
-    return result
-}
-
-let getTypeList = function(options) {
-
-    return new Promise((resolve, reject) => {
-        request.get({
-            url: options.endpoint,
-            json: true
-        }, (err, req, body) => {
-            if (err) {
-                // @TODO throw better error
-                console.log(err)
-                reject(err)
-                return;
-            }
-            if(body.code){
-              console.error(`The endpoint '${options.endpoint}' does not exist or is returning an error.`, body)
-              reject(body)
-              return;
-            }
-
-            resolve(buildTypeList(body))
-        })
-    })
-}
-
-let download = function(path, downloadResponse) {
-
-    return new Promise((resolve, reject) => {
-        request(downloadResponse.link).pipe(fs.createWriteStream(path)).on("finish", resolve).on("error", reject);
-    })
-}
-let unzipDownload = function(zipPath, toPath) {
-    if (zipPath.indexOf(".zip") == -1) throw new Error(`To unzip file must be a .zip file not ${zipPath}`)
-    return new Promise((resolve, reject) => {
-        fs.createReadStream(zipPath).pipe(unzip.Extract({
-            path: toPath
-        })).on("error", reject).on("close", resolve);
-    })
-}
-
-let create = function(options, opts, swaggerSpec) {
-
-    return new Promise((resolve, reject) => {
-        // let swaggerSpec = swaggerSpec ? swaggerSpec : generateSwaggerSpec(this.app)
-        let url = `${options.endpoint}${options.language}`;
-        opts.spec = swaggerSpec
-        request.post({
-            url: url,
-            json: true,
-            body: opts
-
-        }, (err, req, body) => {
-            if (err) {
-                reject(err)
-                return;
-            }
-            if (!isNaN(body.code)) {
-                reject(body)
-                return;
-            }
-            resolve(body)
-        })
-    })
-}
-
-let generate = function(options, action) {
-
-    // @TODO clean up async data
-    init(options)
-        .then(function(initData) {
-
-            options.types.forEach(function(type, i) {
-                options.filename = options.filename || `${type}-${options.action}`
-                options.language = type
-
-                if (initData.clientTypeList[camelCase(type)]) {
-                    return create(options, {}, JSON.parse(initData.api)).then((response) => {
-                        console.log(`${type.charAt(0).toUpperCase() + type.slice(1)} ${options.action} has been created. Downloading from ${response.link}`)
-
-                        // Similar to wget --no-check-certificate
-                        process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
-
-                        // Download
-                        download(options.path.archive + options.filename + '.zip', response).then((response) => {
-                            console.log(`Download of ${options.path.archive + options.filename + '.zip'} complete.`);
-                            console.log(`Unzipping to ${options.path.output}`);
-
-                            // Unzip
-                            unzipDownload(options.path.archive + options.filename + '.zip', options.path.output).then((response) => {
-                                console.log(`SDK generated for ${type}`);
-                            }).catch(function(err){
-                              console.error(`Unzip of ${options.action} ${type} failed`, err)
-                            })
-
-                        }).catch(function(err){
-                          console.error(`Download of ${options.action} ${type} failed`, err)
-                        });
-
-                    }).catch(function(err){
-                      console.error(`Creation of ${options.action} ${type} failed`, err)
-                    })
-                }
+                // Unzip
+                unzipDownload(`${config.path.archive}${config.filename}.zip`, config.path.output)
+                .then(() => {
+                  console.log(`SDK generated for ${type}`);
+                }).catch((err) => {
+                  console.error(`Unzip of ${config.action} ${type} failed`, err);
+                });
+              })
+              .catch((err) => {
+                console.error(`Download of ${config.action} ${type} failed`, err);
+              });
             })
-            return 'true'
-        })
-        .catch(function(err) {
-            console.error('Initialization failed.', err)
-        })
-}
-
-
-
+            .catch((err) => {
+              console.error(`Creation of ${config.action} ${type} failed`, err);
+            });
+        }
+        return true;
+      });
+      return 'true';
+    })
+    .catch((err) => {
+      console.error('Initialization failed.', err);
+    });
+};
 
 module.exports = {
-    // type: {
-    //     client: function(options) {
-    //       options.action = 'client'
-    //
-    //       init(options)
-    //         .then(function(initData) {
-    //             return getTypeList(options)
-    //         })
-    //         .catch(function(err) {
-    //             console.error('Initialization failed.', err)
-    //         })
-    //     },
-    //     // @TODO Generate type list of servers http://generator.swagger.io/#!/servers/
-    //     // server: function (){ return typeList }
-    // },
-    greet: function(){
-      return 'hello friend'
+  // type: {
+  //     client: function(options) {
+  //       options.action = 'client'
+  //
+  //       init(options)
+  //         .then(function(initData) {
+  //             return getTypeList(options)
+  //         })
+  //         .catch(function(err) {
+  //             console.error('Initialization failed.', err)
+  //         })
+  //     },
+  //     // @TODO Generate type list of servers http://generator.swagger.io/#!/servers/
+  //     // server: function (){ return typeList }
+  // },
+  greet() {
+    return 'hello friend';
+  },
+  generate: {
+    client(options) {
+      const defaults = {
+        action: 'client',
+      };
+      const config = Object.assign({}, defaults, options);
+      return generate(config);
     },
-    generate: {
-        client: function(options) {
-            options.action = 'client'
-            return generate(options)
-        },
-        server: function(options) {
-            options.action = 'server'
-            return generate(options)
-        }
-    }
-}
+    server(options) {
+      const defaults = {
+        action: 'client',
+      };
+      const config = Object.assign({}, defaults, options);
+      return generate(config);
+    },
+  },
+};

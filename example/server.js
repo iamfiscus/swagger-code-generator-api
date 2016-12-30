@@ -9,6 +9,6 @@ codegen.generate.server({
   endpoint: 'http://generator.swagger.io/api/gen/servers/',
   path: {
     archive: `./generated/archive/${version}/`,
-    output: `./generated/server/${version}/`
-  }
-})
+    output: `./generated/server/${version}/`,
+  },
+});
