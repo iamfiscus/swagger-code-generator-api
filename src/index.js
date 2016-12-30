@@ -131,7 +131,7 @@ let download = function(path, downloadResponse) {
     })
 }
 let unzipDownload = function(zipPath, toPath) {
-    if (zipPath.indexOf(".zip") == -1) throw new Error("fromPath should be an zip file your path is " + zipPath)
+    if (zipPath.indexOf(".zip") == -1) throw new Error(`To unzip file must be a .zip file not ${zipPath}`)
     return new Promise((resolve, reject) => {
         fs.createReadStream(zipPath).pipe(unzip.Extract({
             path: toPath
@@ -228,6 +228,9 @@ module.exports = {
     //     // @TODO Generate type list of servers http://generator.swagger.io/#!/servers/
     //     // server: function (){ return typeList }
     // },
+    greet: function(){
+      return 'hello friend'
+    },
     generate: {
         client: function(options) {
             options.action = 'client'

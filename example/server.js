@@ -1,7 +1,7 @@
 'use strict';
 
-let codegen = require('../index');
-let version = require('../package.json').version;
+const codegen = require('../src/index');
+const version = require('../package.json').version;
 
 codegen.generate.server({
   types: ['nodejs-server'],
