@@ -1,6 +1,6 @@
-import test from 'ava'
-import codegen from '../src/index'
+import test from 'ava';
+import codegen from '../src/index';
 
-test('my passing test', t => {
-  t.true(codegen.greet() === 'hello friend')
-})
+test('my passing test', (t) => {
+  t.true(codegen.greet() === 'hello friend');
+});
