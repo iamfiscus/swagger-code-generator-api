@@ -17,7 +17,7 @@ test.beforeEach(() => {
   create = proxy('../src/create', ns);
 });
 
-test('Create: should have a body of "stuff"', () => {
+test('should fail if endpoint is invalid', () => {
   sinon.stub(ns.request, 'post', (conf, cb) =>
     cb(false, true, {
       code: 'not a number',
@@ -25,15 +25,12 @@ test('Create: should have a body of "stuff"', () => {
     }),
   );
 
-  return create({
-    endpoint: 'love',
-    language: 'js',
-  }).then(data =>
-    assert.equal(data.stuff, 'yeah i am the body'),
+  return create({}).catch(data =>
+    assert.equal(data.message, 'The endpoint provided is invalid'),
   );
 });
 
-test('Create: is request.post called', () => {
+test('is request.post called', () => {
   const spy = sinon.stub(ns.request, 'post');
   create({
     endpoint: 'love',
@@ -50,6 +47,51 @@ test('Create: is request.post called', () => {
   }));
 });
 
+test('should have a body of "stuff"', () => {
+  sinon.stub(ns.request, 'post', (conf, cb) =>
+    cb(false, true, {
+      code: 'not a number',
+      stuff: 'yeah i am the body',
+    }),
+  );
+
+  return create({
+    endpoint: 'love',
+    language: 'js',
+  }).then(data =>
+    assert.equal(data.stuff, 'yeah i am the body'),
+  );
+});
+
+test('should fail when response code is a number', () => {
+  sinon.stub(ns.request, 'post', (conf, cb) =>
+    cb(false, true, {
+      code: 500,
+    }),
+  );
+
+  return create({
+    endpoint: 'love',
+    language: 'js',
+  }).catch(data =>
+    assert.equal(data.code, 500),
+  );
+});
+
+test('should fail when error object passed', () => {
+  sinon.stub(ns.request, 'post', (conf, cb) =>
+    cb({
+      message: 'This should fail',
+    }),
+  );
+
+  return create({
+    endpoint: 'love',
+    language: 'js',
+  }).catch(data =>
+    assert.equal(data.message, 'This should fail'),
+  );
+});
 
 test.afterEach(() => {
 
