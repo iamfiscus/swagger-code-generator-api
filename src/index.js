@@ -32,7 +32,7 @@ const generate = function generate(options) {
               process.env.NODE_TLS_REJECT_UNAUTHORIZED = 0;
 
               // Download
-              download().get(`${config.path.archive}${config.filename}.zip`, response)
+              download().get(`${config.path.archive}${config.filename}.zip`, response.link)
               .then(() => {
                 console.log(`Download of ${config.path.archive}${config.filename}.zip complete.`);
                 console.log(`Unzipping to ${config.path.output}`);
